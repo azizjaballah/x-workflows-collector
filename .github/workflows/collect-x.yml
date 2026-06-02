@@ -2,6 +2,11 @@ name: Collect X Posts
 
 on:
   workflow_dispatch:
+    inputs:
+      accounts_json:
+        description: "Optional JSON array or {accounts: [...]} override for X handles"
+        required: false
+        default: ""
   schedule:
     - cron: "*/30 * * * *"
 
@@ -9,6 +14,8 @@ jobs:
   collect:
     # Standard GitHub-hosted runner; works on the free Actions tier.
     runs-on: ubuntu-latest
+    env:
+      X_AUTH_STATE_JSON: ${{ secrets.X_AUTH_STATE_JSON }}
 
     steps:
       - name: Check out repository
@@ -27,11 +34,66 @@ jobs:
       - name: Install Playwright Chromium
         run: python -m playwright install --with-deps chromium
 
+      - name: Prepare runtime accounts
+        env:
+          ACCOUNTS_JSON: ${{ github.event.inputs.accounts_json || "" }}
+        run: |
+          mkdir -p output
+          if [ -n "$ACCOUNTS_JSON" ]; then
+            python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          raw = os.environ.get("ACCOUNTS_JSON", "").strip()
+          if not raw:
+              raise SystemExit(0)
+
+          payload = json.loads(raw)
+          accounts = payload.get("accounts") if isinstance(payload, dict) else payload
+          if not isinstance(accounts, list) or not accounts:
+              raise SystemExit("accounts_json must be a non-empty JSON array or {accounts: [...]} object")
+
+          cleaned = []
+          seen = set()
+          for account in accounts:
+              handle = str(account).strip().lstrip("@")
+              if not handle:
+                  continue
+              key = handle.lower()
+              if key in seen:
+                  continue
+              seen.add(key)
+              cleaned.append(handle)
+
+          if not cleaned:
+              raise SystemExit("accounts_json produced no valid handles")
+
+          Path("output/runtime_accounts.json").write_text(
+              json.dumps({"accounts": cleaned}, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          else
+            cp config/accounts.json output/runtime_accounts.json
+          fi
+
+      - name: Restore X auth state
+        if: ${{ env.X_AUTH_STATE_JSON != '' }}
+        run: |
+          mkdir -p .auth
+          printf '%s' "$X_AUTH_STATE_JSON" > .auth/x-storage-state.json
+
       - name: Collect latest posts
         run: |
+          AUTH_ARGS=""
+          if [ -n "$X_AUTH_STATE_JSON" ]; then
+            AUTH_ARGS="--auth-state .auth/x-storage-state.json"
+          fi
           python -m x_workflows_collector.cli \
-            --accounts-file config/accounts.json \
-            --output output/latest_posts.json
+            --accounts-file output/runtime_accounts.json \
+            --output output/latest_posts.json \
+            $AUTH_ARGS
 
       - name: Upload collection artifact
         uses: actions/upload-artifact@v4

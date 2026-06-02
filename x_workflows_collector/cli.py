@@ -5,7 +5,13 @@ import json
 import sys
 from pathlib import Path
 
-from .collector import collect_latest_posts, default_browser_path, load_accounts
+from .collector import (
+    collect_latest_posts,
+    default_browser_path,
+    load_accounts,
+    save_auth_state,
+    save_auth_state_from_cdp,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -33,6 +39,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Extra wait after navigation in milliseconds.",
     )
     parser.add_argument(
+        "--auth-state",
+        default=None,
+        help="Path to a Playwright storage-state JSON file to use for authenticated X collection.",
+    )
+    parser.add_argument(
+        "--save-auth-state",
+        default=None,
+        help="Open a browser for one-time X login and save Playwright storage state to this path, then exit.",
+    )
+    parser.add_argument(
+        "--save-auth-state-from-cdp",
+        default=None,
+        metavar="CDP_URL",
+        help="Connect to an existing Chromium-family browser over CDP and save its storage state to --save-auth-state.",
+    )
+    parser.add_argument(
         "--output",
         default="output/latest_posts.json",
         help="Output JSON file path.",
@@ -46,6 +68,34 @@ def main() -> int:
 
     browser_path = args.browser_path if args.browser_path else default_browser_path()
 
+    if args.save_auth_state and args.save_auth_state_from_cdp:
+        try:
+            save_auth_state_from_cdp(
+                auth_state=args.save_auth_state,
+                cdp_url=args.save_auth_state_from_cdp,
+                timeout_ms=args.timeout_ms,
+            )
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+        print(f"saved auth state to {args.save_auth_state}", file=sys.stderr)
+        return 0
+
+    if args.save_auth_state:
+        try:
+            save_auth_state(
+                auth_state=args.save_auth_state,
+                browser_path=browser_path,
+                timeout_ms=args.timeout_ms,
+            )
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+        print(f"saved auth state to {args.save_auth_state}", file=sys.stderr)
+        return 0
+
     try:
         accounts = load_accounts(args.accounts_file)
         payload = collect_latest_posts(
@@ -53,6 +103,7 @@ def main() -> int:
             browser_path=browser_path,
             timeout_ms=args.timeout_ms,
             wait_ms=args.wait_ms,
+            auth_state=args.auth_state,
         )
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
