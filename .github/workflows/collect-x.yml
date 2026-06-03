@@ -36,7 +36,7 @@ jobs:
 
       - name: Prepare runtime accounts
         env:
-          ACCOUNTS_JSON: ${{ github.event.inputs.accounts_json || "" }}
+          ACCOUNTS_JSON: ${{ github.event.inputs.accounts_json || '' }}
         run: |
           mkdir -p output
           if [ -n "$ACCOUNTS_JSON" ]; then
