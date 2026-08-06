@@ -142,3 +142,7 @@ The workflow in [.github/workflows/collect-x.yml](./.github/workflows/collect-x.
 To use authenticated collection in GitHub Actions, create the local auth state file, copy its full JSON content into a repository secret named `X_AUTH_STATE_JSON`, and run the workflow. If the secret is absent, the workflow falls back to unauthenticated collection.
 
 This project currently focuses on collection only. Postgres insertion can be added later as a separate step or downstream workflow.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
