@@ -15,6 +15,7 @@ METRIC_TAIL_RE = re.compile(r"(?:\s+\d[\d.,]*[KMB]?\b){2,}$")
 
 @dataclass
 class Post:
+    requested_handle: str
     handle: str
     post_id: str
     posted_at: str
@@ -87,6 +88,7 @@ def extract_post_from_article(article, fallback_handle: str) -> Optional[Post]:
     image_urls = extract_image_urls(article)
 
     return Post(
+        requested_handle=normalize_handle(fallback_handle),
         handle=handle,
         post_id=post_id,
         posted_at=timestamps[0],
@@ -261,6 +263,7 @@ def extract_post_from_article_data(article_data: dict, fallback_handle: str) -> 
         images = []
 
     return Post(
+        requested_handle=normalize_handle(fallback_handle),
         handle=handle,
         post_id=post_id,
         posted_at=str(timestamp),
