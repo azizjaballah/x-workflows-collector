@@ -9,9 +9,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from scrapling import DynamicFetcher
-
-
 STATUS_RE = re.compile(r"^/(?P<handle>[A-Za-z0-9_]+)/status/(?P<id>\d+)$")
 METRIC_TAIL_RE = re.compile(r"(?:\s+\d[\d.,]*[KMB]?\b){2,}$")
 
@@ -322,6 +319,10 @@ def fetch_latest_post(
     timeout_ms: int,
     wait_ms: int,
 ) -> Post:
+    # Scrapling initializes browser fingerprints during import and can fail on
+    # hosted runners. Keep it out of the authenticated Playwright path.
+    from scrapling import DynamicFetcher
+
     handle = normalize_handle(handle)
     profile_url = f"https://x.com/{handle}"
     fetch_kwargs = {
