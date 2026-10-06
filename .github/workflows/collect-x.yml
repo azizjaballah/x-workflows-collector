@@ -96,6 +96,7 @@ jobs:
             $AUTH_ARGS
 
       - name: Upload collection artifact
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: latest-x-posts

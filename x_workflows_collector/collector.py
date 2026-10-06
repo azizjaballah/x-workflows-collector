@@ -30,6 +30,7 @@ class Post:
 class CollectionError:
     handle: str
     error: str
+    code: str = "collection_failed"
 
 
 def parse_iso8601(value: str) -> datetime:
@@ -357,6 +358,26 @@ def fetch_latest_post(
     return latest_post
 
 
+
+class FetchFailure(RuntimeError):
+    def __init__(self, code: str, message: str):
+        self.code = code
+        super().__init__(message)
+
+
+def diagnose_empty_timeline(url: str, text: str, status: int | None, authenticated: bool) -> FetchFailure:
+    text = text.lower()
+    if status == 429 or "rate limit exceeded" in text:
+        return FetchFailure("rate_limited", "X rate limit reached")
+    if status is not None and status >= 400:
+        return FetchFailure("upstream_error", f"X returned HTTP {status}")
+    if any(marker in text for marker in ("verify you are human", "unusual activity", "access denied", "account is locked")):
+        return FetchFailure("access_restricted", "X requires an access or account check")
+    if not authenticated or "/i/flow/login" in url or "log in to x" in text or "sign in to x" in text:
+        return FetchFailure("authentication_required", "X login state is missing or no longer accepted")
+    return FetchFailure("timeline_unavailable", "X timeline did not expose readable posts before the deadline")
+
+
 def fetch_latest_post_authenticated(
     handle: str,
     browser_path: Optional[str],
@@ -364,7 +385,7 @@ def fetch_latest_post_authenticated(
     wait_ms: int,
     auth_state: str | Path,
 ) -> Post:
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
     handle = normalize_handle(handle)
     profile_url = f"https://x.com/{handle}"
@@ -381,10 +402,16 @@ def fetch_latest_post_authenticated(
         try:
             context = browser.new_context(storage_state=str(auth_state_path))
             page = context.new_page()
-            page.goto(profile_url, wait_until="domcontentloaded", timeout=timeout_ms)
-            page.wait_for_selector("body", timeout=timeout_ms)
-            if wait_ms > 0:
-                page.wait_for_timeout(wait_ms)
+            response = page.goto(profile_url, wait_until="domcontentloaded", timeout=timeout_ms)
+            authenticated = any(cookie.get("name") == "auth_token" for cookie in context.cookies("https://x.com"))
+            try:
+                page.wait_for_selector("article time", timeout=min(timeout_ms, 15000))
+            except PlaywrightTimeoutError:
+                try:
+                    text = page.locator("body").inner_text(timeout=2000)
+                except PlaywrightTimeoutError:
+                    text = ""
+                raise diagnose_empty_timeline(page.url, text, response.status if response else None, authenticated) from None
 
             article_data = page.evaluate(ARTICLE_DATA_SCRIPT)
             page_images = page.evaluate(PAGE_IMAGE_DATA_SCRIPT)
@@ -476,7 +503,7 @@ def collect_latest_posts(
             else:
                 posts.append(fetch_latest_post(handle, browser_path, timeout_ms, wait_ms))
         except Exception as exc:
-            errors.append(CollectionError(handle=handle, error=str(exc)))
+            errors.append(CollectionError(handle=handle, error=str(exc) if isinstance(exc, FetchFailure) else "X collection failed", code=getattr(exc, "code", "collection_failed")))
 
     return {
         "source": "x",
