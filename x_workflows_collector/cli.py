@@ -113,7 +113,7 @@ def main() -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(payload, ensure_ascii=False))
-    return 0
+    return 1 if payload.get("errors") else 0
 
 
 if __name__ == "__main__":
